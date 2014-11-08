@@ -3986,11 +3986,15 @@ timeout:
  * and make sure gst_rtsp_watch_write_data() returns immediately with
  * #GST_RTSP_EINTR. And empty the queue.
  *
+ * It also flushes the connection output stream.
+ *
  * Since: 1.4
  */
 void
 gst_rtsp_watch_set_flushing (GstRTSPWatch * watch, gboolean flushing)
 {
+  GError *err = NULL;
+
   g_return_if_fail (watch != NULL);
 
   g_mutex_lock (&watch->mutex);
@@ -3999,6 +4003,27 @@ gst_rtsp_watch_set_flushing (GstRTSPWatch * watch, gboolean flushing)
   if (flushing) {
     g_queue_foreach (watch->messages, (GFunc) gst_rtsp_rec_free, NULL);
     g_queue_clear (watch->messages);
+
+    if (watch->conn->output_stream) {
+      gboolean res;
+
+      res = g_output_stream_flush (watch->conn->output_stream,
+          watch->conn->cancellable, &err);
+
+      if (G_UNLIKELY (!res))
+        goto error;
+    }
   }
   g_mutex_unlock (&watch->mutex);
+
+  return;
+
+  /* ERRORS */
+error:
+  {
+    GST_DEBUG ("Unable to flush output stream: %s", err->message);
+    g_clear_error (&err);
+    g_mutex_unlock (&watch->mutex);
+    return;
+  }
 }
